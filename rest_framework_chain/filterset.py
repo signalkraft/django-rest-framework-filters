@@ -32,7 +32,7 @@ def populate_from_filterset(cls, filterset, name, parent_filter, filters):
                 return True
         return False
 
-    to_populate = deepcopy(filterset.base_filters.values())
+    to_populate = deepcopy(list(filterset.base_filters.values()))
     for f in to_populate:
         if _should_skip():
             continue
@@ -45,7 +45,7 @@ def populate_from_filterset(cls, filterset, name, parent_filter, filters):
 
 class ChainedFilterSet(django_filters.FilterSet):
     def __new__(cls, *args, **kwargs):
-        new_cls = super(ChainedFilterSet, cls).__new__(cls, *args, **kwargs)
+        new_cls = django_filters.FilterSet.__new__(cls)
         already_included = {}
 
         for name, filter_ in six.iteritems(new_cls.base_filters):
@@ -70,3 +70,6 @@ class ChainedFilterSet(django_filters.FilterSet):
                     new_cls.base_filters["%s__%s" % (name, lookup_type)] = f
 
         return new_cls
+
+    def __init__(self, *args, **kwargs):
+        return super(ChainedFilterSet, self).__init__(*args, **kwargs)
