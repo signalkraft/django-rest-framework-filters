@@ -15,7 +15,7 @@ from django_filters.filterset import get_model_field
 
 from .filters import RelatedFilter, AllLookupsFilter
 
-def populate_from_filterset(cls, filterset, name, filters):
+def populate_from_filterset(cls, filterset, name, parent_filter, filters):
     """
     Populate `filters` with filters provided on `filterset`.
     """
@@ -25,12 +25,8 @@ def populate_from_filterset(cls, filterset, name, filters):
             if ('%s%s%s' % (name, LOOKUP_SEP, f.name)) in filters:
                 return True
             if isinstance(filter_, RelatedFilter) and isinstance(f, RelatedFilter):
-                # Avoid infinite recursion on recursive relations.  If the queryset and
-                # class are the same, then we assume that we've already added this
-                #if f.extra.get('queryset', None) == filter_.extra.get('queryset'):
-                #    return True
+                # Avoid infinite recursion on recursive relations.
                 if isinstance(cls, filterset):
-                    print "!!!!!"
                     return True
             if f == filter_:
                 return True
@@ -42,9 +38,9 @@ def populate_from_filterset(cls, filterset, name, filters):
             continue
         
         f = copy(f)
-        f.name = '%s%s%s' % (name, LOOKUP_SEP, f.name)
-        
-        filters[f.name] = f
+        old_field_name = f.name
+        f.name = '%s%s%s' % (parent_filter.name, LOOKUP_SEP, f.name)
+        filters['%s%s%s' % (name, LOOKUP_SEP, old_field_name)] = f
 
 
 class ChainedFilterSet(django_filters.FilterSet):
@@ -59,7 +55,7 @@ class ChainedFilterSet(django_filters.FilterSet):
                 #if not _should_include_filter(filter_):
                 #    continue
                 filter_.setup_filterset()
-                populate_from_filterset(new_cls, filter_.filterset, name, new_cls.base_filters)
+                populate_from_filterset(new_cls, filter_.filterset, name, filter_, new_cls.base_filters)
             elif isinstance(filter_, AllLookupsFilter):
                 # Populate our FilterSet fields with all the possible
                 # filters for the AllLookupsFilter field.
@@ -71,6 +67,6 @@ class ChainedFilterSet(django_filters.FilterSet):
                     else:
                         f = new_cls.filter_for_field(field, filter_.name)
                     f.lookup_type = lookup_type
-                    new_cls.base_filters["%s__%s" % (filter_.name, lookup_type)] = f
+                    new_cls.base_filters["%s__%s" % (name, lookup_type)] = f
 
         return new_cls
