@@ -1,4 +1,5 @@
 from copy import copy, deepcopy
+import six
 
 try:
     from django.db.models.constants import LOOKUP_SEP
@@ -11,7 +12,7 @@ from django.utils import six
 
 import django_filters
 from django_filters.filters import LOOKUP_TYPES
-from django_filters.filterset import get_model_field
+from django_filters.filterset import get_model_field, FilterSetMetaclass
 
 from .filters import RelatedFilter, AllLookupsFilter
 
@@ -43,10 +44,9 @@ def populate_from_filterset(cls, filterset, name, parent_filter, filters):
         filters['%s%s%s' % (name, LOOKUP_SEP, old_field_name)] = f
 
 
-class ChainedFilterSet(django_filters.FilterSet):
-    def __new__(cls, *args, **kwargs):
-        new_cls = django_filters.FilterSet.__new__(cls)
-        already_included = {}
+class ChainedFilterSetMeta(FilterSetMetaclass):
+    def __new__(cls, name, bases, attrs):
+        new_cls = super(ChainedFilterSetMeta, cls).__new__(cls, name, bases, attrs)
 
         for name, filter_ in six.iteritems(new_cls.base_filters):
             if isinstance(filter_, RelatedFilter):
@@ -61,6 +61,8 @@ class ChainedFilterSet(django_filters.FilterSet):
                 # filters for the AllLookupsFilter field.
                 model = new_cls._meta.model
                 field = get_model_field(model, filter_.name)
+                if not field:
+                    continue
                 for lookup_type in LOOKUP_TYPES:
                     if isinstance(field, RelatedObject):
                         f = new_cls.filter_for_reverse_field(field, filter_.name)
@@ -68,8 +70,7 @@ class ChainedFilterSet(django_filters.FilterSet):
                         f = new_cls.filter_for_field(field, filter_.name)
                     f.lookup_type = lookup_type
                     new_cls.base_filters["%s__%s" % (name, lookup_type)] = f
-
         return new_cls
 
-    def __init__(self, *args, **kwargs):
-        return super(ChainedFilterSet, self).__init__(*args, **kwargs)
+class ChainedFilterSet(six.with_metaclass(ChainedFilterSetMeta, django_filters.FilterSet)):
+    pass

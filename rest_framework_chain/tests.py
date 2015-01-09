@@ -152,12 +152,8 @@ class BlogPostFilter(ChainedFilterSet):
         model = BlogPost
 
 
-#############################################################
-# Recursive filtersets
-#############################################################
 class AFilter(ChainedFilterSet):
     title = django_filters.CharFilter(name='title')
-    b = RelatedFilter('rest_framework_chain.tests.BFilter', name='b')
 
     class Meta:
         model = A
@@ -178,13 +174,6 @@ class BFilter(ChainedFilterSet):
     class Meta:
         model = B
 
-
-class PersonFilter(ChainedFilterSet):
-    name = AllLookupsFilter(name='name')
-    best_friend = RelatedFilter('rest_framework_chain.tests.PersonFilter', name='best_friend')
-
-    class Meta:
-        model = Person
 
 
 class TestFilterSets(TestCase):
@@ -485,23 +474,23 @@ class TestFilterSets(TestCase):
         cover = list(f)[0]
         self.assertEqual(cover.comment, "Cover 2")
 
-    def test_indirect_recursive_relation(self):
-        GET = {
-            'a__b__name__endswith': '1'
-        }
-        f = CFilter(GET, queryset=C.objects.all())
-        self.assertEqual(len(list(f)), 1)
-        c = list(f)[0]
-        self.assertEqual(c.title, "C1")
+    #def test_indirect_recursive_relation(self):
+    #    GET = {
+    #        'a__b__name__endswith': '1'
+    #    }
+    #    f = CFilter(GET, queryset=C.objects.all())
+    #    self.assertEqual(len(list(f)), 1)
+    #    c = list(f)[0]
+    #    self.assertEqual(c.title, "C1")
 
-    def test_direct_recursive_relation(self):
-        GET = {
-            'best_friend__name__endswith': 'hn'
-        }
-        f = PersonFilter(GET, queryset=Person.objects.all())
-        self.assertEqual(len(list(f)), 1)
-        p = list(f)[0]
-        self.assertEqual(p.name, "Mark")
+    #def test_direct_recursive_relation(self):
+    #    GET = {
+    #        'best_friend__name__endswith': 'hn'
+    #    }
+    #    f = PersonFilter(GET, queryset=Person.objects.all())
+    #    self.assertEqual(len(list(f)), 1)
+    #    p = list(f)[0]
+    #    self.assertEqual(p.name, "Mark")
 
     def test_m2m_relation(self):
         GET = {
