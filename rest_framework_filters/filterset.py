@@ -15,12 +15,44 @@ from django.utils import six
 
 import django_filters
 import django_filters.filters
+import django_filters.filterset
 from django_filters.filterset import get_model_field
 
 from . import filters
 
 
-class FilterSet(django_filters.FilterSet):
+class FilterSetMeta(django_filters.filterset.FilterSetMetaclass):
+    def __new__(cls, name, bases, attrs):
+        new_cls = super(FilterSetMeta, cls).__new__(cls, name, bases, attrs)
+
+        for name, filter_ in six.iteritems(new_cls.base_filters):
+            if isinstance(filter_, filters.RelatedFilter):
+                # Populate our FilterSet fields with the fields we've stored
+                # in RelatedFilter.
+                filter_.setup_filterset()
+                new_cls.populate_from_filterset(filter_.filterset, filter_, name, new_cls.base_filters)
+                # Add an 'isnull' filter to allow checking if the relation is empty.
+                isnull_filter = filters.BooleanFilter(name=("%s%sisnull" % (filter_.name, LOOKUP_SEP)))
+                new_cls.base_filters['%s%s%s' % (filter_.name, LOOKUP_SEP, 'isnull')] = isnull_filter
+            elif isinstance(filter_, filters.AllLookupsFilter):
+                # Populate our FilterSet fields with all the possible
+                # filters for the AllLookupsFilter field.
+                model = new_cls._meta.model
+                field = get_model_field(model, filter_.name)
+                if not field:
+                    continue
+                for lookup_type in new_cls.LOOKUP_TYPES:
+                    if isinstance(field, RelatedObject):
+                        f = new_cls.filter_for_reverse_field(field, filter_.name)
+                    else:
+                        f = new_cls.filter_for_field(field, filter_.name)
+                    f.lookup_type = lookup_type
+                    f = new_cls.fix_filter_field(f)
+                    new_cls.base_filters["%s%s%s" % (name, LOOKUP_SEP, lookup_type)] = f
+        return new_cls
+
+
+class FilterSet(six.with_metaclass(FilterSetMeta, django_filters.FilterSet)):
     # In order to support ISO-8601 -- which is the default output for
     # DRF -- we need to set up custom date/time input formats.
     filter_overrides = {
@@ -37,33 +69,8 @@ class FilterSet(django_filters.FilterSet):
 
     LOOKUP_TYPES = django_filters.filters.LOOKUP_TYPES
 
-    def __init__(self, *args, **kwargs):
-        super(FilterSet, self).__init__(*args, **kwargs)
-
-        for name, filter_ in six.iteritems(self.filters):
-            if isinstance(filter_, filters.RelatedFilter):
-                # Populate our FilterSet fields with the fields we've stored
-                # in RelatedFilter.
-                filter_.setup_filterset()
-                self.populate_from_filterset(filter_.filterset, filter_, name)
-                # Add an 'isnull' filter to allow checking if the relation is empty.
-                isnull_filter = filters.BooleanFilter(name=("%s%sisnull" % (filter_.name, LOOKUP_SEP)))
-                self.filters['%s%s%s' % (filter_.name, LOOKUP_SEP, 'isnull')] = isnull_filter
-            elif isinstance(filter_, filters.AllLookupsFilter):
-                # Populate our FilterSet fields with all the possible
-                # filters for the AllLookupsFilter field.
-                model = self._meta.model
-                field = get_model_field(model, filter_.name)
-                for lookup_type in self.LOOKUP_TYPES:
-                    if isinstance(field, RelatedObject):
-                        f = self.filter_for_reverse_field(field, filter_.name)
-                    else:
-                        f = self.filter_for_field(field, filter_.name)
-                    f.lookup_type = lookup_type
-                    f = self.fix_filter_field(f)
-                    self.filters["%s%s%s" % (name, LOOKUP_SEP, lookup_type)] = f
-
-    def fix_filter_field(self, f):
+    @classmethod
+    def fix_filter_field(cls, f):
         """
         Fix the filter field based on the lookup type. 
         """
@@ -72,22 +79,22 @@ class FilterSet(django_filters.FilterSet):
             return filters.BooleanFilter(name=("%s%sisnull" % (f.name, LOOKUP_SEP)))
         return f
 
-    def populate_from_filterset(self, filterset, filter_, name):
+    @classmethod
+    def populate_from_filterset(cls, filterset, filter_, name, filters_):
         """
         Populate `filters` with filters provided on `filterset`.
         """
         def _should_skip():
-            for name, filter_ in six.iteritems(self.filters):
+            for name, filter_ in six.iteritems(filters_):
+                # Already there, so skip it.
+                if ('%s%s%s' % (name, LOOKUP_SEP, f.name)) in filters_:
+                    return True
+                if isinstance(filter_, filters.RelatedFilter) and isinstance(f, filters.RelatedFilter):
+                    # Avoid infinite recursion on recursive relations.
+                    if isinstance(cls, filterset):
+                        return True
                 if f == filter_:
                     return True
-                # Avoid infinite recursion on recursive relations.  If the queryset and
-                # class are the same, then we assume that we've already added this
-                # filter previously along the lookup chain, e.g.
-                # a__b__a <-- the last 'a' there.
-                if (isinstance(filter_, filters.RelatedFilter) and
-                    isinstance(f, filters.RelatedFilter)):
-                    if f.extra.get('queryset', None) == filter_.extra.get('queryset'):
-                        return True
             return False
 
         for f in filterset.base_filters.values():
@@ -104,4 +111,4 @@ class FilterSet(django_filters.FilterSet):
             filter_name = f.name 
             f.name = '%s%s%s' % (filter_.name, LOOKUP_SEP, filter_name)
             # and then we use the /given/ name keyword as the actual querystring lookup.
-            self.filters['%s%s%s' % (name, LOOKUP_SEP, filter_name)] = f
+            filters_['%s%s%s' % (name, LOOKUP_SEP, filter_name)] = f
