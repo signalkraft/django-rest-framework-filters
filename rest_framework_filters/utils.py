@@ -4,6 +4,7 @@ from collections import OrderedDict
 import django
 from django.db.models.constants import LOOKUP_SEP
 from django.db.models.expressions import Expression
+from django.db.models.fields.related import ForeignKey
 from django.db.models.lookups import Transform
 from django.utils import six
 
@@ -68,6 +69,8 @@ def class_lookups(model_field):
     """
     field_class = type(model_field)
     class_lookups = OrderedDict()
+    if type(model_field) is ForeignKey:
+        return class_lookups
 
     # traverse MRO in reverse, as this puts standard
     # lookups before subclass transforms/lookups
